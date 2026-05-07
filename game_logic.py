@@ -7,65 +7,57 @@ class ConnectTheDotsGame:
     def __init__(self, json_path, width, height):
         self.width = width
         self.height = height
-        
-        # Blank canvas - to draw connected lines on 
+        # This canvas stores the finished lines
         self.canvas = np.zeros((self.height, self.width, 3), dtype=np.uint8)
-        
-        # Initialize dot tracker
         self.current_dot = 0
         
-        # Open & read the JSON file
         with open(json_path, 'r') as file:
             data = json.load(file)
-
-            # Conversion of data in JSON into tuples
             self.dots = [tuple(dot) for dot in data['dots']]
             self.shape_name = data['shape_name']
+            
+        # Add the first dot to the end to close the shape (Star/Triangle logic)
+        if len(self.dots) > 0:
+            self.dots.append(self.dots[0])
 
     def update(self, img, finger_pos):
-
-        # Drawing dots on screen
+        # 1. DRAW ALL THE DOTS
         for i, dot in enumerate(self.dots):
-
-            # If the user has already passed this dot
-            if(i< self.current_dot):
-                color =  (0, 255, 0)
+            if i == len(self.dots) - 1: continue # Don't draw the "closing" dot twice
+                
+            if i < self.current_dot:
+                color = (0, 255, 0) # Completed
+            elif i == self.current_dot:
+                color = (0, 0, 255) # Current Target (Red)
             else:
-                (0,0,255)
-                        
-            # Draw the circle and put the number next to it
+                color = (200, 200, 200) # Future dots
+                
             cv2.circle(img, dot, 12, color, cv2.FILLED)
             cv2.putText(img, str(i+1), (dot[0]+15, dot[1]-15), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-        # If we see a finger & game isn't finished
+        # 2. DRAW THE "RUBBER BAND" LINE
         if finger_pos and self.current_dot < len(self.dots):
-            target_x, target_y = self.dots[self.current_dot]
-            cx, cy = finger_pos # Finger coordinates
+            target_dot = self.dots[self.current_dot]
             
-            dist = math.hypot(cx - target_x, cy - target_y)
+            # If we aren't on the first dot, draw a line from the previous dot to your finger
+            if self.current_dot > 0:
+                prev_dot = self.dots[self.current_dot - 1]
+                cv2.line(img, prev_dot, finger_pos, (0, 255, 255), 3)
 
-            # If the finger is within 30 pixels of the target dot
-            if dist < 30:
-                # If this isn't the very first dot, draw a line connecting it to the previous dot
+            # Check if finger hit the target dot
+            dist = math.hypot(finger_pos[0] - target_dot[0], finger_pos[1] - target_dot[1])
+            if dist < 40:
                 if self.current_dot > 0:
-                    cv2.line(self.canvas, self.dots[self.current_dot-1], 
-                             self.dots[self.current_dot], (255, 255, 0), 5)
-                
-                # Move on to the next dot
+                    # Permanently draw the line from the last dot to this one
+                    cv2.line(self.canvas, self.dots[self.current_dot-1], target_dot, (255, 255, 0), 5)
                 self.current_dot += 1
-                
-        # Close the shape
-        # If the user hit the last dot, draw one final line back to the very first dot [0]
-        elif self.current_dot == len(self.dots):
-            cv2.line(self.canvas, self.dots[-1], self.dots[0], (255, 255, 0), 5)
-            self.current_dot += 1 # Add 1 again so this block doesn't repeat endlessly
-            
-        if self.current_dot > len(self.dots):
-            cv2.putText(img, f"{self.shape_name} Complete!", (50, 50), 
+
+        # 3. VICTORY MESSAGE
+        if self.current_dot == len(self.dots):
+            cv2.putText(img, f"{self.shape_name} Complete!", (50, 100), 
                         cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 255), 3)
 
-        # Overlay image
-        # We add the black canvas (which holds our drawn lines) on top of the live camera feed
-        img = cv2.add(img, self.canvas)
-        return img
+        # FINAL MERGE (Ensuring no crash)
+        combined_img = cv2.add(img, self.canvas)
+        return combined_img
